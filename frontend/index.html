@@ -1,177 +1,212 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kalpi | Quantitative Portfolio Trade Execution Engine</title>
-    <link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Kalpi Trade Execution Engine — execute and monitor portfolio trades in real-time." />
+  <title>Kalpi — Trade Execution</title>
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-    <header>
-        <div class="nav-container">
-            <div class="logo">
-                <div class="logo-icon">K</div>
-                Kalpi Trade Execution Engine
-            </div>
-            <div class="status-badge">
-                <div class="pulse"></div>
-                Engine Core Connected
-            </div>
+
+  <!-- ===== Navbar ===== -->
+  <nav class="navbar" role="navigation">
+    <div class="navbar-brand">
+      <span class="navbar-logo">Kalpi</span>
+      <span class="navbar-divider"></span>
+      <span class="navbar-subtitle">Trade Execution</span>
+    </div>
+    <div class="navbar-right">
+      <div class="engine-status">
+        <span class="engine-status-dot"></span>
+        Engine Online
+      </div>
+      <span class="navbar-version">v1.0</span>
+    </div>
+  </nav>
+
+  <!-- ===== Main Layout ===== -->
+  <main class="main-layout">
+
+    <!-- ===== Left Panel ===== -->
+    <aside class="panel-left">
+
+      <!-- Card: Portfolio Configuration -->
+      <div class="card" id="card-config">
+        <div class="card-header">
+          <span class="card-title">Portfolio Configuration</span>
         </div>
-    </header>
+        <div class="card-body">
+          <div class="form-group mb-4">
+            <label class="form-label" for="input-portfolio-id">Portfolio ID</label>
+            <input
+              type="text"
+              class="form-input"
+              id="input-portfolio-id"
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              spellcheck="false"
+              autocomplete="off"
+            />
+          </div>
 
-    <main>
-        <!-- LEFT COLUMN: Configurations & Trade Inputs -->
-        <section class="left-pane">
-            <div class="card">
-                <div class="card-title">1. Connect Broker & Portfolio</div>
-                
-                <div class="form-group">
-                    <label for="portfolio-id">Portfolio ID (UUID)</label>
-                    <input type="text" id="portfolio-id" value="385806c3-1d2a-436d-97e2-895c02b1f148" placeholder="Enter Portfolio UUID">
-                </div>
-
-                <div class="form-group">
-                    <label for="broker-select">Select Broker</label>
-                    <select id="broker-select">
-                        <option value="mock">Simulated Mock Broker (Recommended for Testing)</option>
-                        <option value="zerodha">Zerodha (Kite Connect SDK)</option>
-                        <option value="fyers">Fyers API</option>
-                        <option value="angelone">AngelOne (SmartAPI)</option>
-                        <option value="groww">Groww Gateway</option>
-                        <option value="upstox">Upstox API v2</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Execution Mode</label>
-                    <div class="radio-group">
-                        <div class="radio-card active" id="mode-first-time" onclick="setExecutionMode('FIRST_TIME')">
-                            <strong>First-Time</strong>
-                            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Buy target weights</p>
-                        </div>
-                        <div class="radio-card" id="mode-rebalance" onclick="setExecutionMode('REBALANCE')">
-                            <strong>Rebalancing</strong>
-                            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Execute signed adjustments</p>
-                        </div>
-                    </div>
-                </div>
+          <div class="form-row mb-4">
+            <div class="form-group">
+              <label class="form-label" for="select-broker">Broker</label>
+              <select class="form-select" id="select-broker">
+                <option value="mock">Mock</option>
+                <option value="zerodha">Zerodha</option>
+                <option value="fyers">Fyers</option>
+                <option value="angelone">Angel One</option>
+                <option value="groww">Groww</option>
+                <option value="upstox">Upstox</option>
+              </select>
             </div>
-
-            <div class="card">
-                <div class="card-title">
-                    2. Portfolio Trade Basket
-                    <span class="count" id="basket-count">0 stocks</span>
-                </div>
-
-                <div class="trades-table-container">
-                    <table id="trades-input-table">
-                        <thead>
-                            <tr>
-                                <th>Ticker</th>
-                                <th>Action</th>
-                                <th>Quantity</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody id="trades-input-body">
-                            <!-- Rows will be dynamically added by JavaScript -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem;">
-                    <button class="btn btn-secondary" onclick="addTradeRow('', 'BUY', 10)" style="flex: 1;">+ Add Stock</button>
-                    <button class="btn btn-secondary" onclick="loadSamplePortfolio()" style="flex: 1.2;">⚡ Load Sample</button>
-                </div>
-
-                <button class="btn btn-primary" id="execute-btn" onclick="submitPortfolioExecution()">
-                    🚀 Execute Trades in Single Click
-                </button>
+            <div class="form-group">
+              <label class="form-label">Mode</label>
+              <div class="toggle-group" id="mode-toggle">
+                <button type="button" class="toggle-btn active" data-mode="FIRST_TIME">First Time</button>
+                <button type="button" class="toggle-btn" data-mode="REBALANCE">Rebalance</button>
+              </div>
             </div>
-        </section>
+          </div>
+        </div>
+      </div>
 
-        <!-- RIGHT COLUMN: Live Execution Tracker & History -->
-        <section class="right-pane">
-            <div class="tabs">
-                <button class="tab active" id="tab-tracker" onclick="switchTab('tracker')">Live Execution Tracker</button>
-                <button class="tab" id="tab-history" onclick="switchTab('history')">Execution History</button>
+      <!-- Card: Trade Basket -->
+      <div class="card" id="card-trades">
+        <div class="card-header">
+          <span class="card-title">Trade Basket</span>
+          <span class="card-subtitle" id="trade-count">0 stocks</span>
+        </div>
+        <div class="card-body-compact">
+          <table class="trade-table" id="trade-table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th id="qty-header">Target Qty</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="trade-table-body">
+              <!-- Rows inserted by JS -->
+            </tbody>
+          </table>
+          <div class="mode-hint" id="mode-hint" style="display:none;">
+            Positive quantity = buy more, negative = sell some
+          </div>
+          <div class="trade-actions">
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-add-stock">Add Stock</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-load-sample">Load Sample</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Execute Button -->
+      <button type="button" class="btn btn-primary btn-execute" id="btn-execute">
+        Execute Trades
+      </button>
+
+    </aside>
+
+    <!-- ===== Right Panel ===== -->
+    <section class="panel-right">
+
+      <!-- Tabs -->
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab-btn active" data-tab="tracker" role="tab" id="tab-tracker">Live Tracker</button>
+        <button type="button" class="tab-btn" data-tab="history" role="tab" id="tab-history">History</button>
+      </div>
+
+      <!-- Tab: Live Tracker -->
+      <div class="tab-panel active" id="panel-tracker" role="tabpanel">
+
+        <!-- Empty State -->
+        <div class="tracker-empty" id="tracker-empty">
+          <p class="tracker-empty-title">No active execution</p>
+          <p class="tracker-empty-desc">Configure your portfolio and trades on the left, then hit Execute to start monitoring.</p>
+        </div>
+
+        <!-- Active Tracker (hidden by default) -->
+        <div id="tracker-active" style="display:none;">
+
+          <!-- Metadata -->
+          <div class="tracker-meta" id="tracker-meta">
+            <div class="meta-item">
+              <div class="meta-label">Status</div>
+              <div class="meta-value" id="meta-status">—</div>
             </div>
-
-            <!-- TAB 1: Live Tracker -->
-            <div id="pane-tracker">
-                <div class="card" id="active-job-card">
-                    <div class="card-title">
-                        Active Execution Job
-                        <span class="badge badge-pending" id="overall-job-status" style="margin-left: auto;">Idle</span>
-                    </div>
-
-                    <div id="job-details-area" class="hidden">
-                        <div class="form-group" style="font-size: 0.85rem; color: var(--text-muted); display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-                            <div><strong>Execution Job ID:</strong> <span id="lbl-job-id" style="font-family: monospace;">-</span></div>
-                            <div><strong>Portfolio ID:</strong> <span id="lbl-portfolio-id" style="font-family: monospace;">-</span></div>
-                        </div>
-
-                        <div class="progress-container">
-                            <div class="progress-info">
-                                <span>Order Placement Progress</span>
-                                <span id="progress-percentage">0% (0/0)</span>
-                            </div>
-                            <div class="progress-bar-bg">
-                                <div class="progress-bar" id="progress-bar-fill"></div>
-                            </div>
-                        </div>
-
-                        <div class="card-title" style="font-size: 1.05rem; border: none; margin-top: 1.5rem; margin-bottom: 0.75rem;">Orders Execution Status</div>
-                        <div class="trades-table-container" style="max-height: 300px; margin-bottom: 1.5rem;">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Ticker</th>
-                                        <th>Action</th>
-                                        <th>Qty</th>
-                                        <th>Status</th>
-                                        <th>Broker Order ID</th>
-                                        <th>Logs/Errors</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="execution-orders-body">
-                                    <tr>
-                                        <td colspan="6" style="text-align: center; color: var(--text-muted);">No active execution. Trigger a run on the left.</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="card-title" style="font-size: 1.05rem; border: none; margin-bottom: 0.75rem;">Notifications Log</div>
-                        <div class="log-container" id="console-logs">
-Waiting for execution report...
-                        </div>
-                    </div>
-
-                    <div id="no-active-job" style="padding: 3rem 1rem; text-align: center; color: var(--text-muted);">
-                        <div style="font-size: 3rem; margin-bottom: 1rem;">📈</div>
-                        <h3>No Active Execution Job</h3>
-                        <p style="font-size: 0.85rem; margin-top: 0.5rem; max-width: 320px; margin-left: auto; margin-right: auto;">
-                            Configure your portfolio inputs and click "Execute Trades" to start.
-                        </p>
-                    </div>
-                </div>
+            <div class="meta-item">
+              <div class="meta-label">Execution ID</div>
+              <div class="meta-value" id="meta-exec-id">—</div>
             </div>
-
-            <!-- TAB 2: Execution History -->
-            <div id="pane-history" class="hidden">
-                <div class="card">
-                    <div class="card-title">Historical Execution Logs</div>
-                    <div id="history-list-container">
-                        <!-- History elements inserted dynamically -->
-                        <div style="padding: 2rem 0; text-align: center; color: var(--text-muted);">Loading historical records...</div>
-                    </div>
-                </div>
+            <div class="meta-item">
+              <div class="meta-label">Portfolio</div>
+              <div class="meta-value" id="meta-portfolio-id">—</div>
             </div>
-        </section>
-    </main>
+            <div class="meta-item">
+              <div class="meta-label">Started</div>
+              <div class="meta-value" id="meta-created-at">—</div>
+            </div>
+          </div>
 
-    <script src="/static/app.js"></script>
+          <!-- Progress -->
+          <div class="progress-section">
+            <div class="progress-header">
+              <span class="progress-label">Order Progress</span>
+              <span class="progress-count" id="progress-count">0 / 0</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="progress-bar"></div>
+            </div>
+          </div>
+
+          <!-- Orders Table -->
+          <div class="orders-table-wrap">
+            <table class="orders-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Action</th>
+                  <th>Qty</th>
+                  <th>Status</th>
+                  <th>Broker ID</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="orders-table-body">
+                <!-- Filled by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Terminal Log -->
+          <div class="terminal">
+            <div class="terminal-header">
+              <span class="terminal-title">Execution Log</span>
+            </div>
+            <div class="terminal-body" id="terminal-body">
+              <!-- Log lines inserted by JS -->
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Tab: History -->
+      <div class="tab-panel" id="panel-history" role="tabpanel">
+        <div id="history-container">
+          <div class="history-empty" id="history-empty">No execution history yet</div>
+          <div class="history-list" id="history-list" style="display:none;"></div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/static/app.js"></script>
 </body>
 </html>

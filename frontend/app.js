@@ -1,450 +1,547 @@
-let currentExecutionMode = 'FIRST_TIME';
-let activeExecutionId = null;
-let pollingInterval = null;
+/* ============================================
+   Kalpi Trade Execution — App Logic
+   ============================================ */
 
-// On document load
-document.addEventListener("DOMContentLoaded", () => {
-    // Set a random portfolio UUID for testing convenience
-    document.getElementById("portfolio-id").value = generateUUID();
-    
-    // Add default initial rows
-    loadSamplePortfolio();
-    
-    // Check if there's any active execution stored in localStorage
-    const savedJobId = localStorage.getItem("active_execution_id");
-    if (savedJobId) {
-        startTrackingJob(savedJobId);
+(function () {
+  'use strict';
+
+  // ─── State ──────────────────────────────────────
+  const state = {
+    mode: 'FIRST_TIME',
+    trades: [],
+    executing: false,
+    currentExecutionId: null,
+    pollInterval: null,
+    logs: [],
+  };
+
+  // ─── DOM References ─────────────────────────────
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => document.querySelectorAll(sel);
+
+  const dom = {
+    portfolioId: $('#input-portfolio-id'),
+    broker: $('#select-broker'),
+    modeToggle: $('#mode-toggle'),
+    qtyHeader: $('#qty-header'),
+    modeHint: $('#mode-hint'),
+    tradeTableBody: $('#trade-table-body'),
+    tradeCount: $('#trade-count'),
+    btnAddStock: $('#btn-add-stock'),
+    btnLoadSample: $('#btn-load-sample'),
+    btnExecute: $('#btn-execute'),
+    tabTracker: $('#tab-tracker'),
+    tabHistory: $('#tab-history'),
+    panelTracker: $('#panel-tracker'),
+    panelHistory: $('#panel-history'),
+    trackerEmpty: $('#tracker-empty'),
+    trackerActive: $('#tracker-active'),
+    metaStatus: $('#meta-status'),
+    metaExecId: $('#meta-exec-id'),
+    metaPortfolioId: $('#meta-portfolio-id'),
+    metaCreatedAt: $('#meta-created-at'),
+    progressCount: $('#progress-count'),
+    progressBar: $('#progress-bar'),
+    ordersTableBody: $('#orders-table-body'),
+    terminalBody: $('#terminal-body'),
+    historyEmpty: $('#history-empty'),
+    historyList: $('#history-list'),
+    toastContainer: $('#toast-container'),
+  };
+
+  // ─── Utilities ──────────────────────────────────
+  function uuid() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
+  function shortId(id) {
+    if (!id) return '—';
+    return id.substring(0, 8) + '...';
+  }
+
+  function formatTime(dateStr) {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  }
+
+  function formatDateTime(dateStr) {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) + ', ' +
+      d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  function now() {
+    return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  }
+
+  // ─── Toast Notifications ───────────────────────
+  function showToast(message, type = 'default') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    dom.toastContainer.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(8px)';
+      toast.style.transition = 'all 200ms ease';
+      setTimeout(() => toast.remove(), 200);
+    }, 3500);
+  }
+
+  // ─── Badge HTML ─────────────────────────────────
+  function badgeHTML(status) {
+    const s = (status || '').toUpperCase();
+    let cls = 'badge-pending';
+    if (s === 'COMPLETED' || s === 'EXECUTED') cls = 'badge-completed';
+    else if (s === 'FAILED') cls = 'badge-failed';
+    else if (s === 'PROCESSING') cls = 'badge-processing';
+    else if (s === 'PARTIALLY_COMPLETED') cls = 'badge-partially';
+    else if (s === 'PENDING') cls = 'badge-pending';
+    return `<span class="badge ${cls}"><span class="badge-dot"></span>${s.replace('_', ' ')}</span>`;
+  }
+
+  // ─── Mode Toggle ───────────────────────────────
+  function initModeToggle() {
+    dom.modeToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('.toggle-btn');
+      if (!btn) return;
+      dom.modeToggle.querySelectorAll('.toggle-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.mode = btn.dataset.mode;
+      updateModeUI();
+    });
+  }
+
+  function updateModeUI() {
+    if (state.mode === 'REBALANCE') {
+      dom.qtyHeader.textContent = 'Adjustment';
+      dom.modeHint.style.display = 'block';
+    } else {
+      dom.qtyHeader.textContent = 'Target Qty';
+      dom.modeHint.style.display = 'none';
     }
-});
-
-function generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
+    // Update qty input types for rebalance (allow negatives)
+    dom.tradeTableBody.querySelectorAll('.input-qty').forEach((input) => {
+      if (state.mode === 'REBALANCE') {
+        input.removeAttribute('min');
+        input.placeholder = '+/- qty';
+      } else {
+        input.setAttribute('min', '1');
+        input.placeholder = 'qty';
+      }
     });
-}
+  }
 
-function setExecutionMode(mode) {
-    currentExecutionMode = mode;
-    
-    // Update active visual class
-    document.getElementById("mode-first-time").classList.toggle("active", mode === 'FIRST_TIME');
-    document.getElementById("mode-rebalance").classList.toggle("active", mode === 'REBALANCE');
-    
-    // Update all actions in the table if it's First-Time
-    const actionSelects = document.querySelectorAll(".row-action");
-    actionSelects.forEach(select => {
-        if (mode === 'FIRST_TIME') {
-            select.value = 'BUY';
-            select.disabled = true;
-            
-            // Convert any negative quantities to positive
-            const qtyInput = select.closest("tr").querySelector(".row-qty");
-            if (qtyInput && parseInt(qtyInput.value) < 0) {
-                qtyInput.value = Math.abs(parseInt(qtyInput.value));
-            }
-        } else {
-            select.disabled = false;
-        }
-    });
-    
-    updateBasketCount();
-}
-
-function addTradeRow(ticker = '', action = 'BUY', quantity = 10) {
-    const tbody = document.getElementById("trades-input-body");
-    const row = document.createElement("tr");
-    
-    const isFirstTime = currentExecutionMode === 'FIRST_TIME';
-    
-    row.innerHTML = `
-        <td>
-            <input type="text" class="row-ticker" placeholder="e.g. INFY" value="${ticker}" oninput="this.value = this.value.toUpperCase()">
-        </td>
-        <td>
-            <select class="row-action" ${isFirstTime ? 'disabled' : ''}>
-                <option value="BUY" ${action === 'BUY' ? 'selected' : ''}>BUY</option>
-                <option value="SELL" ${action === 'SELL' ? 'selected' : ''}>SELL</option>
-                <option value="REBALANCE" ${action === 'REBALANCE' ? 'selected' : ''}>REBALANCE</option>
-            </select>
-        </td>
-        <td>
-            <input type="number" class="row-qty" value="${quantity}" placeholder="Qty">
-        </td>
-        <td>
-            <button class="delete-row" onclick="deleteRow(this)">×</button>
-        </td>
+  // ─── Trade Basket ───────────────────────────────
+  function addTradeRow(ticker = '', quantity = '') {
+    const idx = state.trades.length;
+    state.trades.push({ ticker, quantity });
+    const tr = document.createElement('tr');
+    tr.dataset.index = idx;
+    tr.innerHTML = `
+      <td><input type="text" class="input-ticker" value="${ticker}" placeholder="e.g. RELIANCE" spellcheck="false" autocomplete="off" /></td>
+      <td><input type="number" class="input-qty" value="${quantity}" placeholder="${state.mode === 'REBALANCE' ? '+/- qty' : 'qty'}" ${state.mode === 'FIRST_TIME' ? 'min="1"' : ''} /></td>
+      <td><button type="button" class="btn-remove-row" title="Remove">&times;</button></td>
     `;
-    
-    tbody.appendChild(row);
-    updateBasketCount();
-}
+    dom.tradeTableBody.appendChild(tr);
+    updateTradeCount();
 
-function deleteRow(btn) {
-    btn.closest("tr").remove();
-    updateBasketCount();
-}
+    // Event listeners
+    const tickerInput = tr.querySelector('.input-ticker');
+    const qtyInput = tr.querySelector('.input-qty');
+    const removeBtn = tr.querySelector('.btn-remove-row');
 
-function updateBasketCount() {
-    const rows = document.querySelectorAll("#trades-input-body tr");
-    document.getElementById("basket-count").textContent = `${rows.length} stock${rows.length !== 1 ? 's' : ''}`;
-}
+    tickerInput.addEventListener('input', () => {
+      state.trades[idx].ticker = tickerInput.value.toUpperCase().trim();
+    });
+    tickerInput.addEventListener('blur', () => {
+      tickerInput.value = tickerInput.value.toUpperCase().trim();
+    });
+    qtyInput.addEventListener('input', () => {
+      state.trades[idx].quantity = qtyInput.value;
+    });
+    removeBtn.addEventListener('click', () => {
+      tr.remove();
+      state.trades[idx] = null;
+      updateTradeCount();
+    });
+  }
 
-function loadSamplePortfolio() {
-    const tbody = document.getElementById("trades-input-body");
-    tbody.innerHTML = "";
-    
-    if (currentExecutionMode === 'FIRST_TIME') {
-        addTradeRow("RELIANCE", "BUY", 15);
-        addTradeRow("TCS", "BUY", 8);
-        addTradeRow("HDFCBANK", "BUY", 25);
-        addTradeRow("INFY", "BUY", 12);
-    } else {
-        addTradeRow("RELIANCE", "REBALANCE", 5);       // adjust +5 shares
-        addTradeRow("TCS", "SELL", 4);                 // exit 4 shares
-        addTradeRow("HDFCBANK", "REBALANCE", -10);     // adjust -10 shares (resolves to SELL)
-        addTradeRow("WIPRO", "BUY", 50);               // brand new stock buy
-        addTradeRow("FAIL", "BUY", 10);                // This will fail intentionally for demo
-    }
-}
+  function getValidTrades() {
+    return state.trades.filter((t) => t && t.ticker && t.quantity !== '' && t.quantity !== null)
+      .map((t) => ({
+        ticker: t.ticker.toUpperCase(),
+        quantity: parseInt(t.quantity, 10),
+      }))
+      .filter((t) => !isNaN(t.quantity) && (state.mode === 'REBALANCE' || t.quantity > 0));
+  }
 
-// Switches tab panes
-function switchTab(tabName) {
-    document.getElementById("tab-tracker").classList.toggle("active", tabName === 'tracker');
-    document.getElementById("tab-history").classList.toggle("active", tabName === 'history');
-    
-    document.getElementById("pane-tracker").classList.toggle("hidden", tabName !== 'tracker');
-    document.getElementById("pane-history").classList.toggle("hidden", tabName !== 'history');
-    
-    if (tabName === 'history') {
-        loadExecutionHistory();
-    }
-}
+  function updateTradeCount() {
+    const count = getValidTrades().length;
+    dom.tradeCount.textContent = `${count} stock${count !== 1 ? 's' : ''}`;
+  }
 
-// Submit to FastAPI Backend
-async function submitPortfolioExecution() {
-    const portfolioId = document.getElementById("portfolio-id").value.trim();
-    const broker = document.getElementById("broker-select").value;
-    
+  function loadSampleTrades() {
+    // Clear existing
+    dom.tradeTableBody.innerHTML = '';
+    state.trades = [];
+
+    const samples = [
+      { ticker: 'RELIANCE', quantity: 10 },
+      { ticker: 'TCS', quantity: 5 },
+      { ticker: 'HDFCBANK', quantity: 15 },
+      { ticker: 'INFY', quantity: 8 },
+      { ticker: 'ICICIBANK', quantity: 12 },
+    ];
+    samples.forEach((s) => addTradeRow(s.ticker, s.quantity));
+  }
+
+  // ─── Tabs ───────────────────────────────────────
+  function initTabs() {
+    $$('.tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        $$('.tab-btn').forEach((b) => b.classList.remove('active'));
+        $$('.tab-panel').forEach((p) => p.classList.remove('active'));
+        btn.classList.add('active');
+        const panel = $(`#panel-${btn.dataset.tab}`);
+        if (panel) panel.classList.add('active');
+
+        // Refresh history when switching to history tab
+        if (btn.dataset.tab === 'history') {
+          loadHistory();
+        }
+      });
+    });
+  }
+
+  // ─── Terminal Logging ───────────────────────────
+  function addLog(msg, type = 'default') {
+    state.logs.push({ time: now(), msg, type });
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    const msgClass = type === 'error' ? 'log-error' : type === 'info' ? 'log-info' : '';
+    line.innerHTML = `<span class="log-time">${now()}</span><span class="log-msg ${msgClass}">${escapeHtml(msg)}</span>`;
+    dom.terminalBody.appendChild(line);
+    dom.terminalBody.scrollTop = dom.terminalBody.scrollHeight;
+  }
+
+  function clearLogs() {
+    state.logs = [];
+    dom.terminalBody.innerHTML = '';
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ─── Execute Trades ─────────────────────────────
+  async function executeTrades() {
+    const portfolioId = dom.portfolioId.value.trim();
     if (!portfolioId) {
-        alert("Please enter a Portfolio UUID.");
-        return;
+      showToast('Portfolio ID is required', 'error');
+      dom.portfolioId.focus();
+      return;
     }
-    
-    const rows = document.querySelectorAll("#trades-input-body tr");
-    if (rows.length === 0) {
-        alert("Portfolio trade basket is empty. Add at least one trade.");
-        return;
+
+    const trades = getValidTrades();
+    if (trades.length === 0) {
+      showToast('Add at least one valid trade', 'error');
+      return;
     }
-    
-    const trades = [];
-    let validationError = null;
-    
-    rows.forEach((row, i) => {
-        const ticker = row.querySelector(".row-ticker").value.trim();
-        const action = row.querySelector(".row-action").value;
-        const qtyStr = row.querySelector(".row-qty").value;
-        
-        if (!ticker) {
-            validationError = `Row ${i + 1} has empty ticker symbol.`;
-        }
-        
-        const qty = parseInt(qtyStr);
-        if (isNaN(qty)) {
-            validationError = `Row ${i + 1} (${ticker || 'Stock'}) has an invalid quantity.`;
-        }
-        
-        trades.push({
-            ticker: ticker,
-            action: action,
-            quantity: qty
-        });
-    });
-    
-    if (validationError) {
-        alert(validationError);
-        return;
-    }
-    
+
+    state.executing = true;
+    dom.btnExecute.disabled = true;
+    dom.btnExecute.innerHTML = '<span class="spinner"></span> Executing...';
+
+    // Switch to tracker tab
+    dom.tabTracker.click();
+
+    // Show tracker
+    dom.trackerEmpty.style.display = 'none';
+    dom.trackerActive.style.display = 'block';
+
+    // Reset tracker UI
+    clearLogs();
+    dom.ordersTableBody.innerHTML = '';
+    dom.progressBar.style.width = '0%';
+    dom.progressCount.textContent = '0 / 0';
+    dom.metaStatus.innerHTML = badgeHTML('PENDING');
+    dom.metaExecId.textContent = '—';
+    dom.metaPortfolioId.textContent = shortId(portfolioId);
+    dom.metaCreatedAt.textContent = '—';
+
+    addLog('Preparing execution payload...', 'info');
+
     const payload = {
-        portfolio_id: portfolioId,
-        broker: broker,
-        action_type: currentExecutionMode,
-        trades: trades
+      portfolio_id: portfolioId,
+      broker: dom.broker.value,
+      action_type: state.mode,
+      trades: trades,
     };
-    
-    const executeBtn = document.getElementById("execute-btn");
-    executeBtn.disabled = true;
-    executeBtn.textContent = "Validating and Enqueuing...";
-    
+
+    addLog(`Broker: ${payload.broker} | Mode: ${payload.action_type} | Trades: ${trades.length}`, 'info');
+
     try {
-        const response = await fetch("/api/portfolio/execute", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.detail || "Server error while launching execution.");
-        }
-        
-        // Show tracking area
-        document.getElementById("no-active-job").classList.add("hidden");
-        document.getElementById("job-details-area").classList.remove("hidden");
-        
-        if (data.status === "COMPLETED") {
-            // Already in desired state
-            const badge = document.getElementById("overall-job-status");
-            badge.className = "badge badge-executed";
-            badge.textContent = "COMPLETED";
-            
-            document.getElementById("progress-bar-fill").style.width = "100%";
-            document.getElementById("progress-percentage").textContent = "100% (0/0)";
-            
-            document.getElementById("lbl-job-id").textContent = data.portfolio_execution_id;
-            document.getElementById("lbl-portfolio-id").textContent = portfolioId;
-            
-            const tbody = document.getElementById("execution-orders-body");
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--success); font-weight: 600; padding: 2rem;">✓ Portfolio is already in the desired state. No trades required.</td></tr>`;
-            
-            const consoleLogs = document.getElementById("console-logs");
-            consoleLogs.textContent = `================================================================================\n` +
-                                      `🚨 PORTFOLIO STATUS REPORT 🚨\n` +
-                                      `Portfolio ID     : ${portfolioId}\n` +
-                                      `Job ID           : ${data.portfolio_execution_id}\n` +
-                                      `Status           : ✅ NO ACTION REQUIRED\n` +
-                                      `Message          : ${data.message}\n` +
-                                      `================================================================================`;
-            
-            if (pollingInterval) clearInterval(pollingInterval);
-            localStorage.removeItem("active_execution_id");
-            switchTab('tracker');
+      addLog('POST /api/portfolio/execute', 'info');
+
+      const res = await fetch('/api/portfolio/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || errData.message || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      addLog(`Response: ${data.status} — ${data.message || ''}`, data.status === 'COMPLETED' ? 'info' : 'default');
+
+      if (data.status === 'COMPLETED') {
+        // No trades needed
+        dom.metaStatus.innerHTML = badgeHTML('COMPLETED');
+        dom.metaExecId.textContent = shortId(data.portfolio_execution_id);
+        dom.progressBar.style.width = '100%';
+        dom.progressCount.textContent = 'Done';
+        addLog('Portfolio already matches target. No trades executed.', 'info');
+        showToast('Portfolio already at target — no trades needed', 'success');
+        resetExecuteButton();
+        return;
+      }
+
+      // PENDING — start polling
+      state.currentExecutionId = data.portfolio_execution_id;
+      dom.metaExecId.textContent = shortId(data.portfolio_execution_id);
+      addLog(`Execution ID: ${data.portfolio_execution_id}`);
+      addLog('Starting status polling...');
+
+      startPolling(data.portfolio_execution_id);
+
+    } catch (err) {
+      addLog(`Error: ${err.message}`, 'error');
+      showToast(err.message, 'error');
+      resetExecuteButton();
+    }
+  }
+
+  // ─── Polling ────────────────────────────────────
+  function startPolling(executionId) {
+    // Clear any existing interval
+    if (state.pollInterval) clearInterval(state.pollInterval);
+
+    // Immediately fetch once
+    pollExecution(executionId);
+
+    // Then poll every 2 seconds
+    state.pollInterval = setInterval(() => {
+      pollExecution(executionId);
+    }, 2000);
+  }
+
+  function stopPolling() {
+    if (state.pollInterval) {
+      clearInterval(state.pollInterval);
+      state.pollInterval = null;
+    }
+  }
+
+  async function pollExecution(executionId) {
+    try {
+      const res = await fetch(`/api/portfolio/execution/${executionId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      updateTrackerUI(data);
+
+      // Stop polling on terminal states
+      const terminalStates = ['COMPLETED', 'FAILED', 'PARTIALLY_COMPLETED'];
+      if (terminalStates.includes(data.status)) {
+        stopPolling();
+        resetExecuteButton();
+
+        if (data.status === 'COMPLETED') {
+          addLog('All orders executed successfully.');
+          showToast('Execution completed successfully', 'success');
+        } else if (data.status === 'FAILED') {
+          addLog('Execution failed.', 'error');
+          showToast('Execution failed', 'error');
         } else {
-            // Start tracking
-            startTrackingJob(data.portfolio_execution_id);
-            switchTab('tracker');
+          addLog('Execution partially completed — some orders failed.', 'error');
+          showToast('Execution partially completed', 'error');
         }
-        
-    } catch (error) {
-        alert(`RMS / Validation Error:\n\n${error.message}`);
-    } finally {
-        executeBtn.disabled = false;
-        executeBtn.textContent = "🚀 Execute Trades in Single Click";
+      }
+    } catch (err) {
+      addLog(`Poll error: ${err.message}`, 'error');
     }
-}
+  }
 
-function startTrackingJob(jobId) {
-    activeExecutionId = jobId;
-    localStorage.setItem("active_execution_id", jobId);
-    
-    // Clear logs area
-    const consoleLogs = document.getElementById("console-logs");
-    consoleLogs.textContent = `Connecting to execution engine tracker...\nJob ID: ${jobId}\nListening to queues...\n`;
-    
-    // Reset progress bar
-    document.getElementById("progress-bar-fill").style.width = "0%";
-    document.getElementById("progress-percentage").textContent = "0% (0/0)";
-    
-    // Set headers
-    document.getElementById("lbl-job-id").textContent = jobId;
-    document.getElementById("lbl-portfolio-id").textContent = document.getElementById("portfolio-id").value;
-    
-    // Clear active status badge
-    const badge = document.getElementById("overall-job-status");
-    badge.className = "badge badge-processing";
-    badge.textContent = "Processing";
-    
-    // Poll endpoints
-    if (pollingInterval) clearInterval(pollingInterval);
-    pollJobStatus(); // Initial run
-    pollingInterval = setInterval(pollJobStatus, 800);
-}
+  function updateTrackerUI(data) {
+    // Status badge
+    dom.metaStatus.innerHTML = badgeHTML(data.status);
+    dom.metaExecId.textContent = shortId(data.id);
+    dom.metaPortfolioId.textContent = shortId(data.portfolio_id);
+    dom.metaCreatedAt.textContent = formatTime(data.created_at);
 
-async function pollJobStatus() {
-    if (!activeExecutionId) return;
-    
-    try {
-        const response = await fetch(`/api/portfolio/execution/${activeExecutionId}`);
-        if (!response.ok) {
-            if (response.status === 404) {
-                // Job hasn't hit db yet, waiting
-                return;
-            }
-            throw new Error("Failed to fetch execution status.");
-        }
-        
-        const data = await response.json();
-        updateTrackerUI(data);
-        
-        // Check if finished
-        const terminalStates = ["COMPLETED", "FAILED", "PARTIALLY_COMPLETED"];
-        if (terminalStates.includes(data.status)) {
-            clearInterval(pollingInterval);
-            pollingInterval = null;
-            localStorage.removeItem("active_execution_id");
-            
-            // Format log report in console
-            renderReportLogs(data);
-        }
-    } catch (error) {
-        console.error("Polling error:", error);
-    }
-}
-
-function updateTrackerUI(data) {
-    // 1. Update overall status badge
-    const badge = document.getElementById("overall-job-status");
-    badge.textContent = data.status.replace("_", " ");
-    
-    if (data.status === "COMPLETED") {
-        badge.className = "badge badge-executed";
-    } else if (data.status === "FAILED") {
-        badge.className = "badge badge-failed";
-    } else if (data.status === "PARTIALLY_COMPLETED") {
-        badge.className = "badge badge-warning";
-    } else {
-        badge.className = "badge badge-processing";
-    }
-    
-    // 2. Update Progress Bar
-    const total = data.total_orders;
-    const completed = data.completed_orders;
+    // Progress
+    const total = data.total_orders || 0;
+    const completed = data.completed_orders || 0;
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-    
-    document.getElementById("progress-bar-fill").style.width = `${pct}%`;
-    document.getElementById("progress-percentage").textContent = `${pct}% (${completed}/${total})`;
-    
-    // 3. Update orders list
-    const tbody = document.getElementById("execution-orders-body");
-    tbody.innerHTML = "";
-    
-    data.orders.forEach(order => {
-        const tr = document.createElement("tr");
-        
-        let statusBadge = "";
-        if (order.status === "EXECUTED") {
-            statusBadge = '<span class="badge badge-executed">Executed</span>';
-        } else if (order.status === "FAILED") {
-            statusBadge = '<span class="badge badge-failed">Failed</span>';
-        } else if (order.status === "PENDING") {
-            statusBadge = '<span class="badge badge-pending">Pending</span>';
-        } else {
-            statusBadge = `<span class="badge badge-processing">${order.status}</span>`;
-        }
-        
-        tr.innerHTML = `
-            <td style="font-weight:600;">${order.ticker}</td>
-            <td>${order.action}</td>
-            <td>${order.quantity}</td>
-            <td>${statusBadge}</td>
-            <td style="font-family:monospace; font-size:0.8rem;">${order.broker_order_id || '-'}</td>
-            <td style="font-size:0.8rem; color:${order.status === 'FAILED' ? 'var(--danger)' : 'var(--text-muted)'}">
-                ${order.error_message || (order.status === 'EXECUTED' ? 'Order processed successfully' : 'Queued...')}
-            </td>
+    dom.progressBar.style.width = `${pct}%`;
+    dom.progressCount.textContent = `${completed} / ${total}`;
+
+    // Orders table
+    if (data.orders && data.orders.length > 0) {
+      dom.ordersTableBody.innerHTML = data.orders.map((order) => {
+        const actionClass = (order.action || '').toUpperCase() === 'BUY' ? 'action-buy' : 'action-sell';
+        const brokerId = order.broker_order_id ? `<span class="mono">${shortId(order.broker_order_id)}</span>` : '<span class="text-muted">—</span>';
+        const details = order.error_message
+          ? `<span class="error-text" title="${escapeHtml(order.error_message)}">${escapeHtml(order.error_message)}</span>`
+          : '<span class="text-muted">—</span>';
+
+        return `
+          <tr>
+            <td class="ticker-cell">${escapeHtml(order.ticker || '')}</td>
+            <td class="${actionClass}">${(order.action || '').toUpperCase()}</td>
+            <td class="mono">${order.quantity}</td>
+            <td>${badgeHTML(order.status)}</td>
+            <td>${brokerId}</td>
+            <td>${details}</td>
+          </tr>
         `;
-        
-        tbody.appendChild(tr);
-    });
-    
-    // Highlight UI card area
-    document.getElementById("no-active-job").classList.add("hidden");
-    document.getElementById("job-details-area").classList.remove("hidden");
-}
-
-function renderReportLogs(data) {
-    const consoleLogs = document.getElementById("console-logs");
-    
-    const successList = data.orders.filter(o => o.status === 'EXECUTED');
-    const failedList = data.orders.filter(o => o.status === 'FAILED');
-    
-    let report = `================================================================================\n`;
-    report += `🚨 PORTFOLIO TRADE EXECUTION REPORT 🚨\n`;
-    report += `Execution Job ID : ${data.id}\n`;
-    report += `Portfolio ID     : ${data.portfolio_id}\n`;
-    report += `Status           : ${data.status}\n`;
-    report += `Summary          : ${successList.length}/${data.total_orders} Orders Succeeded\n`;
-    report += `================================================================================\n\n`;
-    
-    if (successList.length > 0) {
-        report += `✓ SUCCESSFUL TRADES:\n`;
-        successList.forEach(o => {
-            report += `  - BUY ${o.quantity} shares of ${o.ticker} (Broker Order ID: ${o.broker_order_id})\n`;
-        });
-        report += `\n`;
+      }).join('');
     }
-    
-    if (failedList.length > 0) {
-        report += `✗ FAILED / REJECTED TRADES:\n`;
-        failedList.forEach(o => {
-            report += `  - BUY ${o.quantity} shares of ${o.ticker} - Reason: ${o.error_message}\n`;
-        });
-        report += `\n`;
-    }
-    
-    report += `================================================================================\n`;
-    report += `Engine Core: Log notification output generated. Completed in async queues.`;
-    
-    consoleLogs.textContent = report;
-}
+  }
 
-// Fetch history from DB
-async function loadExecutionHistory() {
-    const container = document.getElementById("history-list-container");
-    container.innerHTML = `<div style="padding: 2rem 0; text-align: center; color: var(--text-muted);">Loading historical records...</div>`;
-    
+  function resetExecuteButton() {
+    state.executing = false;
+    dom.btnExecute.disabled = false;
+    dom.btnExecute.innerHTML = 'Execute Trades';
+  }
+
+  // ─── History ────────────────────────────────────
+  async function loadHistory() {
     try {
-        const response = await fetch("/api/portfolio/executions");
-        if (!response.ok) throw new Error("Could not load history.");
-        
-        const data = await response.json();
-        
-        if (data.length === 0) {
-            container.innerHTML = `
-                <div style="padding: 3rem 1rem; text-align: center; color: var(--text-muted);">
-                    <p>No trade execution logs found in Postgres.</p>
-                </div>`;
-            return;
-        }
-        
-        container.innerHTML = "";
-        data.forEach(job => {
-            const div = document.createElement("div");
-            div.className = "history-item";
-            div.onclick = () => {
-                // Load details of this historical job in tracker
-                activeExecutionId = job.id;
-                document.getElementById("portfolio-id").value = job.portfolio_id;
-                pollJobStatus();
-                switchTab('tracker');
-            };
-            
-            let badgeClass = "badge-processing";
-            if (job.status === "COMPLETED") badgeClass = "badge-executed";
-            if (job.status === "FAILED") badgeClass = "badge-failed";
-            if (job.status === "PARTIALLY_COMPLETED") badgeClass = "badge-warning";
-            
-            const dateStr = new Date(job.created_at).toLocaleString();
-            
-            div.innerHTML = `
-                <div class="history-header">
-                    <strong style="font-family:monospace; font-size:0.9rem;">Job: ${job.id.substring(0, 8)}...</strong>
-                    <span class="badge ${badgeClass}">${job.status.replace("_", " ")}</span>
-                </div>
-                <div class="history-meta">
-                    <span>Portfolio: ${job.portfolio_id.substring(0, 8)}...</span>
-                    <span>Trades: ${job.completed_orders}/${job.total_orders} done</span>
-                    <span>Date: ${dateStr}</span>
-                </div>
-            `;
-            
-            container.appendChild(div);
+      const res = await fetch('/api/portfolio/executions');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      // Handle both array and object with items/executions
+      const executions = Array.isArray(data) ? data : (data.items || data.executions || []);
+
+      if (executions.length === 0) {
+        dom.historyEmpty.style.display = 'block';
+        dom.historyList.style.display = 'none';
+        return;
+      }
+
+      dom.historyEmpty.style.display = 'none';
+      dom.historyList.style.display = 'flex';
+
+      dom.historyList.innerHTML = executions.map((exec) => {
+        const ordersText = exec.total_orders != null ? `${exec.completed_orders || 0}/${exec.total_orders} orders` : '';
+        return `
+          <div class="history-item" data-execution-id="${exec.id}">
+            <span class="history-item-id">${shortId(exec.id)}</span>
+            <div class="history-item-info">
+              <span class="history-item-portfolio">${exec.portfolio_id || '—'}</span>
+            </div>
+            ${badgeHTML(exec.status)}
+            <div>
+              <div class="history-item-orders">${ordersText}</div>
+              <div class="history-item-time">${formatDateTime(exec.created_at)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Click handler for history items
+      dom.historyList.querySelectorAll('.history-item').forEach((item) => {
+        item.addEventListener('click', () => {
+          const execId = item.dataset.executionId;
+          viewExecution(execId);
         });
-        
-    } catch (error) {
-        container.innerHTML = `<div style="padding: 2rem 0; text-align: center; color: var(--danger);">${error.message}</div>`;
+      });
+
+    } catch (err) {
+      // Silently fail — history is non-critical
     }
-}
+  }
+
+  async function viewExecution(executionId) {
+    // Switch to tracker tab
+    dom.tabTracker.click();
+    dom.trackerEmpty.style.display = 'none';
+    dom.trackerActive.style.display = 'block';
+
+    clearLogs();
+    addLog(`Loading execution ${shortId(executionId)}...`, 'info');
+
+    try {
+      const res = await fetch(`/api/portfolio/execution/${executionId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      updateTrackerUI(data);
+      addLog(`Loaded execution — status: ${data.status}`, 'info');
+
+      // If still processing, start polling
+      if (data.status === 'PROCESSING' || data.status === 'PENDING') {
+        state.currentExecutionId = executionId;
+        startPolling(executionId);
+      }
+
+    } catch (err) {
+      addLog(`Error loading execution: ${err.message}`, 'error');
+      showToast('Failed to load execution details', 'error');
+    }
+  }
+
+  // ─── Init ───────────────────────────────────────
+  function init() {
+    // Generate a UUID on load
+    dom.portfolioId.value = uuid();
+
+    // Add initial empty trade row
+    addTradeRow();
+
+    // Mode toggle
+    initModeToggle();
+
+    // Tabs
+    initTabs();
+
+    // Add stock button
+    dom.btnAddStock.addEventListener('click', () => addTradeRow());
+
+    // Load sample button
+    dom.btnLoadSample.addEventListener('click', loadSampleTrades);
+
+    // Execute button
+    dom.btnExecute.addEventListener('click', () => {
+      if (!state.executing) executeTrades();
+    });
+
+    // Listen for trade input changes to update count
+    dom.tradeTableBody.addEventListener('input', updateTradeCount);
+
+    // Load history on startup
+    loadHistory();
+  }
+
+  // Boot
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+})();
