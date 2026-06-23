@@ -37,3 +37,8 @@ class ExecutionStatusResponse(BaseModel):
     created_at: str
     updated_at: str
     orders: List[OrderStatusResponse]
+
+class HoldingsResponse(BaseModel):
+    portfolio_id: UUID = Field(..., description="Unique UUID identifier of the portfolio")
+    holdings: dict = Field(..., description="Mapping of ticker -> net quantity held. Positive = buy, negative = sell.")
+

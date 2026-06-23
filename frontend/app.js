@@ -24,6 +24,7 @@
     broker: $('#select-broker'),
     modeToggle: $('#mode-toggle'),
     qtyHeader: $('#qty-header'),
+    actionHeader: $('#action-header'),
     modeHint: $('#mode-hint'),
     tradeTableBody: $('#trade-table-body'),
     tradeCount: $('#trade-count'),
@@ -47,6 +48,18 @@
     historyEmpty: $('#history-empty'),
     historyList: $('#history-list'),
     toastContainer: $('#toast-container'),
+    tabHoldings: $('#tab-holdings'),
+    panelHoldings: $('#panel-holdings'),
+    holdingsMeta: $('#holdings-meta'),
+    holdingsPortfolioId: $('#holdings-portfolio-id'),
+    holdingsCount: $('#holdings-count'),
+    holdingsEmpty: $('#holdings-empty'),
+    holdingsActive: $('#holdings-active'),
+    holdingsTableBody: $('#holdings-table-body'),
+    btnRefreshHoldings: $('#btn-refresh-holdings'),
+    btnRefreshHoldingsActive: $('#btn-refresh-holdings-active'),
+    btnCopyHoldingsToBasket: $('#btn-copy-holdings-to-basket'),
+    btnViewHoldingsShortcut: $('#btn-view-holdings-shortcut'),
   };
 
   // ─── Utilities ──────────────────────────────────
@@ -78,6 +91,12 @@
 
   function now() {
     return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   // ─── Toast Notifications ───────────────────────
@@ -119,41 +138,57 @@
   }
 
   function updateModeUI() {
-    if (state.mode === 'REBALANCE') {
-      dom.qtyHeader.textContent = 'Adjustment';
-      dom.modeHint.style.display = 'block';
-    } else {
-      dom.qtyHeader.textContent = 'Target Qty';
-      dom.modeHint.style.display = 'none';
+    const isRebalance = state.mode === 'REBALANCE';
+
+    // Show/hide action column header
+    if (dom.actionHeader) {
+      dom.actionHeader.style.display = isRebalance ? '' : 'none';
     }
-    // Update qty input types for rebalance (allow negatives)
-    dom.tradeTableBody.querySelectorAll('.input-qty').forEach((input) => {
-      if (state.mode === 'REBALANCE') {
-        input.removeAttribute('min');
-        input.placeholder = '+/- qty';
-      } else {
-        input.setAttribute('min', '1');
-        input.placeholder = 'qty';
-      }
+
+    // Show/hide action cells in existing rows
+    dom.tradeTableBody.querySelectorAll('.action-col').forEach((el) => {
+      el.style.display = isRebalance ? '' : 'none';
     });
+
+    // Update quantity header label
+    dom.qtyHeader.textContent = isRebalance ? 'Quantity' : 'Target Qty';
+
+    // Update mode hint text
+    if (isRebalance) {
+      dom.modeHint.textContent = 'BUY: shares to purchase | SELL: shares to exit | REBALANCE: target qty (auto-adjusts delta)';
+    } else {
+      dom.modeHint.textContent = 'Specify your desired end-state. The engine auto-computes what to buy, sell, or hold.';
+    }
   }
 
   // ─── Trade Basket ───────────────────────────────
-  function addTradeRow(ticker = '', quantity = '') {
+  function addTradeRow(ticker = '', action = 'REBALANCE', quantity = '') {
     const idx = state.trades.length;
-    state.trades.push({ ticker, quantity });
+    state.trades.push({ ticker, action, quantity });
     const tr = document.createElement('tr');
     tr.dataset.index = idx;
+
+    const isRebalance = state.mode === 'REBALANCE';
+
     tr.innerHTML = `
       <td><input type="text" class="input-ticker" value="${ticker}" placeholder="e.g. RELIANCE" spellcheck="false" autocomplete="off" /></td>
-      <td><input type="number" class="input-qty" value="${quantity}" placeholder="${state.mode === 'REBALANCE' ? '+/- qty' : 'qty'}" ${state.mode === 'FIRST_TIME' ? 'min="1"' : ''} /></td>
+      <td class="action-col" style="${isRebalance ? '' : 'display:none'}">
+        <select class="input-action">
+          <option value="BUY" ${action === 'BUY' ? 'selected' : ''}>BUY</option>
+          <option value="SELL" ${action === 'SELL' ? 'selected' : ''}>SELL</option>
+          <option value="REBALANCE" ${action === 'REBALANCE' ? 'selected' : ''}>REBALANCE</option>
+        </select>
+      </td>
+      <td><input type="number" class="input-qty" value="${quantity}" placeholder="qty" min="1" /></td>
       <td><button type="button" class="btn-remove-row" title="Remove">&times;</button></td>
     `;
+
     dom.tradeTableBody.appendChild(tr);
     updateTradeCount();
 
     // Event listeners
     const tickerInput = tr.querySelector('.input-ticker');
+    const actionSelect = tr.querySelector('.input-action');
     const qtyInput = tr.querySelector('.input-qty');
     const removeBtn = tr.querySelector('.btn-remove-row');
 
@@ -162,6 +197,9 @@
     });
     tickerInput.addEventListener('blur', () => {
       tickerInput.value = tickerInput.value.toUpperCase().trim();
+    });
+    actionSelect.addEventListener('change', () => {
+      state.trades[idx].action = actionSelect.value;
     });
     qtyInput.addEventListener('input', () => {
       state.trades[idx].quantity = qtyInput.value;
@@ -174,12 +212,20 @@
   }
 
   function getValidTrades() {
-    return state.trades.filter((t) => t && t.ticker && t.quantity !== '' && t.quantity !== null)
-      .map((t) => ({
-        ticker: t.ticker.toUpperCase(),
-        quantity: parseInt(t.quantity, 10),
-      }))
-      .filter((t) => !isNaN(t.quantity) && (state.mode === 'REBALANCE' || t.quantity > 0));
+    return state.trades
+      .filter((t) => t && t.ticker && t.quantity !== '' && t.quantity !== null)
+      .map((t) => {
+        const trade = {
+          ticker: t.ticker.toUpperCase(),
+          quantity: parseInt(t.quantity, 10),
+        };
+        // In REBALANCE mode, include the per-trade action
+        if (state.mode === 'REBALANCE') {
+          trade.action = t.action || 'REBALANCE';
+        }
+        return trade;
+      })
+      .filter((t) => !isNaN(t.quantity));
   }
 
   function updateTradeCount() {
@@ -188,18 +234,28 @@
   }
 
   function loadSampleTrades() {
-    // Clear existing
     dom.tradeTableBody.innerHTML = '';
     state.trades = [];
 
-    const samples = [
-      { ticker: 'RELIANCE', quantity: 10 },
-      { ticker: 'TCS', quantity: 5 },
-      { ticker: 'HDFCBANK', quantity: 15 },
-      { ticker: 'INFY', quantity: 8 },
-      { ticker: 'ICICIBANK', quantity: 12 },
-    ];
-    samples.forEach((s) => addTradeRow(s.ticker, s.quantity));
+    if (state.mode === 'FIRST_TIME') {
+      // Target portfolio — system auto-computes deltas
+      [
+        { ticker: 'RELIANCE', quantity: 15 },
+        { ticker: 'TCS', quantity: 8 },
+        { ticker: 'HDFCBANK', quantity: 25 },
+        { ticker: 'INFY', quantity: 12 },
+        { ticker: 'ICICIBANK', quantity: 20 },
+      ].forEach((s) => addTradeRow(s.ticker, 'REBALANCE', s.quantity));
+    } else {
+      // Mixed action rebalance basket
+      [
+        { ticker: 'RELIANCE', action: 'REBALANCE', quantity: 80 },
+        { ticker: 'TCS', action: 'BUY', quantity: 15 },
+        { ticker: 'HDFCBANK', action: 'SELL', quantity: 10 },
+        { ticker: 'INFY', action: 'REBALANCE', quantity: 20 },
+        { ticker: 'WIPRO', action: 'BUY', quantity: 50 },
+      ].forEach((s) => addTradeRow(s.ticker, s.action, s.quantity));
+    }
   }
 
   // ─── Tabs ───────────────────────────────────────
@@ -212,9 +268,10 @@
         const panel = $(`#panel-${btn.dataset.tab}`);
         if (panel) panel.classList.add('active');
 
-        // Refresh history when switching to history tab
         if (btn.dataset.tab === 'history') {
           loadHistory();
+        } else if (btn.dataset.tab === 'holdings') {
+          loadHoldings();
         }
       });
     });
@@ -234,12 +291,6 @@
   function clearLogs() {
     state.logs = [];
     dom.terminalBody.innerHTML = '';
-  }
-
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
   }
 
   // ─── Execute Trades ─────────────────────────────
@@ -287,7 +338,11 @@
       trades: trades,
     };
 
-    addLog(`Broker: ${payload.broker} | Mode: ${payload.action_type} | Trades: ${trades.length}`, 'info');
+    const tradesSummary = trades.map((t) => {
+      const action = t.action ? `${t.action} ` : '';
+      return `${action}${t.ticker} x${t.quantity}`;
+    }).join(', ');
+    addLog(`Mode: ${state.mode} | Broker: ${payload.broker} | Trades: ${tradesSummary}`, 'info');
 
     try {
       addLog('POST /api/portfolio/execute', 'info');
@@ -307,7 +362,7 @@
       addLog(`Response: ${data.status} — ${data.message || ''}`, data.status === 'COMPLETED' ? 'info' : 'default');
 
       if (data.status === 'COMPLETED') {
-        // No trades needed
+        // No trades needed — portfolio already at target
         dom.metaStatus.innerHTML = badgeHTML('COMPLETED');
         dom.metaExecId.textContent = shortId(data.portfolio_execution_id);
         dom.progressBar.style.width = '100%';
@@ -335,13 +390,10 @@
 
   // ─── Polling ────────────────────────────────────
   function startPolling(executionId) {
-    // Clear any existing interval
     if (state.pollInterval) clearInterval(state.pollInterval);
 
-    // Immediately fetch once
     pollExecution(executionId);
 
-    // Then poll every 2 seconds
     state.pollInterval = setInterval(() => {
       pollExecution(executionId);
     }, 2000);
@@ -362,7 +414,6 @@
 
       updateTrackerUI(data);
 
-      // Stop polling on terminal states
       const terminalStates = ['COMPLETED', 'FAILED', 'PARTIALLY_COMPLETED'];
       if (terminalStates.includes(data.status)) {
         stopPolling();
@@ -427,6 +478,78 @@
     dom.btnExecute.innerHTML = 'Execute Trades';
   }
 
+  // ─── Holdings ───────────────────────────────────
+  async function loadHoldings() {
+    const portfolioId = dom.portfolioId.value.trim();
+    if (!portfolioId) {
+      showToast('Portfolio ID is required', 'error');
+      dom.holdingsEmpty.style.display = 'block';
+      dom.holdingsActive.style.display = 'none';
+      dom.holdingsMeta.style.display = 'none';
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/portfolio/${portfolioId}/holdings`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || errData.message || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const holdings = data.holdings || {};
+      const tickers = Object.keys(holdings);
+
+      dom.holdingsPortfolioId.textContent = shortId(portfolioId);
+      dom.holdingsCount.textContent = tickers.length;
+
+      if (tickers.length === 0) {
+        dom.holdingsEmpty.style.display = 'block';
+        dom.holdingsActive.style.display = 'none';
+        dom.holdingsMeta.style.display = 'block';
+        return;
+      }
+
+      dom.holdingsEmpty.style.display = 'none';
+      dom.holdingsMeta.style.display = 'flex';
+      dom.holdingsActive.style.display = 'block';
+
+      dom.holdingsTableBody.innerHTML = tickers.map((ticker) => {
+        const qty = holdings[ticker];
+        return `
+          <tr>
+            <td class="ticker-cell">${escapeHtml(ticker)}</td>
+            <td class="mono">${qty}</td>
+          </tr>
+        `;
+      }).join('');
+
+      state.currentHoldingsData = holdings;
+
+    } catch (err) {
+      showToast(`Failed to load holdings: ${err.message}`, 'error');
+      dom.holdingsEmpty.style.display = 'block';
+      dom.holdingsActive.style.display = 'none';
+      dom.holdingsMeta.style.display = 'none';
+    }
+  }
+
+  function copyHoldingsToBasket() {
+    if (!state.currentHoldingsData || Object.keys(state.currentHoldingsData).length === 0) {
+      showToast('No holdings to copy', 'error');
+      return;
+    }
+
+    dom.tradeTableBody.innerHTML = '';
+    state.trades = [];
+
+    Object.entries(state.currentHoldingsData).forEach(([ticker, qty]) => {
+      addTradeRow(ticker, 'REBALANCE', qty);
+    });
+
+    showToast('Loaded holdings into trade basket', 'success');
+  }
+
   // ─── History ────────────────────────────────────
   async function loadHistory() {
     try {
@@ -434,7 +557,6 @@
       if (!res.ok) return;
       const data = await res.json();
 
-      // Handle both array and object with items/executions
       const executions = Array.isArray(data) ? data : (data.items || data.executions || []);
 
       if (executions.length === 0) {
@@ -463,11 +585,9 @@
         `;
       }).join('');
 
-      // Click handler for history items
       dom.historyList.querySelectorAll('.history-item').forEach((item) => {
         item.addEventListener('click', () => {
-          const execId = item.dataset.executionId;
-          viewExecution(execId);
+          viewExecution(item.dataset.executionId);
         });
       });
 
@@ -477,7 +597,6 @@
   }
 
   async function viewExecution(executionId) {
-    // Switch to tracker tab
     dom.tabTracker.click();
     dom.trackerEmpty.style.display = 'none';
     dom.trackerActive.style.display = 'block';
@@ -493,7 +612,6 @@
       updateTrackerUI(data);
       addLog(`Loaded execution — status: ${data.status}`, 'info');
 
-      // If still processing, start polling
       if (data.status === 'PROCESSING' || data.status === 'PENDING') {
         state.currentExecutionId = executionId;
         startPolling(executionId);
@@ -510,30 +628,31 @@
     // Generate a UUID on load
     dom.portfolioId.value = uuid();
 
-    // Add initial empty trade row
-    addTradeRow();
-
-    // Mode toggle
+    // Initialize mode toggle
     initModeToggle();
+    updateModeUI();
 
-    // Tabs
+    // Initialize tabs
     initTabs();
 
-    // Add stock button
+    // Load sample trades for the default mode
+    loadSampleTrades();
+
+    // Button handlers
     dom.btnAddStock.addEventListener('click', () => addTradeRow());
-
-    // Load sample button
     dom.btnLoadSample.addEventListener('click', loadSampleTrades);
-
-    // Execute button
     dom.btnExecute.addEventListener('click', () => {
       if (!state.executing) executeTrades();
     });
+    dom.btnRefreshHoldings.addEventListener('click', loadHoldings);
+    dom.btnRefreshHoldingsActive.addEventListener('click', loadHoldings);
+    dom.btnCopyHoldingsToBasket.addEventListener('click', copyHoldingsToBasket);
+    dom.btnViewHoldingsShortcut.addEventListener('click', () => dom.tabHoldings.click());
 
-    // Listen for trade input changes to update count
+    // Update trade count on input
     dom.tradeTableBody.addEventListener('input', updateTradeCount);
 
-    // Load history on startup
+    // Load history
     loadHistory();
   }
 

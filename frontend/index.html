@@ -38,7 +38,10 @@
         </div>
         <div class="card-body">
           <div class="form-group mb-4">
-            <label class="form-label" for="input-portfolio-id">Portfolio ID</label>
+            <div class="flex justify-between items-center">
+              <label class="form-label" for="input-portfolio-id">Portfolio ID</label>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-view-holdings-shortcut" style="height: auto; padding: 2px 6px; font-size: 0.7rem; border-color: transparent;">View Holdings</button>
+            </div>
             <input
               type="text"
               class="form-input"
@@ -83,6 +86,7 @@
             <thead>
               <tr>
                 <th>Ticker</th>
+                <th class="action-col" id="action-header" style="display:none">Action</th>
                 <th id="qty-header">Target Qty</th>
                 <th></th>
               </tr>
@@ -91,8 +95,8 @@
               <!-- Rows inserted by JS -->
             </tbody>
           </table>
-          <div class="mode-hint" id="mode-hint" style="display:none;">
-            Positive quantity = buy more, negative = sell some
+          <div class="mode-hint" id="mode-hint">
+            Specify your desired end-state. The engine auto-computes what to buy, sell, or hold.
           </div>
           <div class="trade-actions">
             <button type="button" class="btn btn-ghost btn-sm" id="btn-add-stock">Add Stock</button>
@@ -114,6 +118,7 @@
       <!-- Tabs -->
       <div class="tabs" role="tablist">
         <button type="button" class="tab-btn active" data-tab="tracker" role="tab" id="tab-tracker">Live Tracker</button>
+        <button type="button" class="tab-btn" data-tab="holdings" role="tab" id="tab-holdings">Current Holdings</button>
         <button type="button" class="tab-btn" data-tab="history" role="tab" id="tab-history">History</button>
       </div>
 
@@ -189,6 +194,53 @@
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <!-- Tab: Current Holdings -->
+      <div class="tab-panel" id="panel-holdings" role="tabpanel">
+
+        <!-- Portfolio Selection State -->
+        <div class="tracker-meta mb-4" id="holdings-meta" style="display:none;">
+          <div class="meta-item">
+            <div class="meta-label">Viewing Portfolio</div>
+            <div class="meta-value" id="holdings-portfolio-id">—</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Total Unique Holdings</div>
+            <div class="meta-value" id="holdings-count">0</div>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div class="tracker-empty" id="holdings-empty">
+          <p class="tracker-empty-title">No holdings to display</p>
+          <p class="tracker-empty-desc">Enter a valid Portfolio ID on the left, then click 'Refresh' or load the holdings tab.</p>
+          <button type="button" class="btn btn-ghost btn-sm mt-4" id="btn-refresh-holdings">Refresh Holdings</button>
+        </div>
+
+        <!-- Holdings Content (hidden by default) -->
+        <div id="holdings-active" style="display:none;">
+          <!-- Action buttons -->
+          <div class="mb-4" style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-refresh-holdings-active">Refresh</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-copy-holdings-to-basket">Load into Trade Basket</button>
+          </div>
+
+          <!-- Holdings Table -->
+          <div class="orders-table-wrap">
+            <table class="orders-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Quantity</th>
+                </tr>
+              </thead>
+              <tbody id="holdings-table-body">
+                <!-- Filled by JS -->
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

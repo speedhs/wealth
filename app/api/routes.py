@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status
 from app.api import schemas
-from app.rms.validator import validate_portfolio_execution
+from app.rms.validator import validate_portfolio_execution, get_current_holdings
 from app.core.queue import publish_message
 from app.core.config import settings
 from app.core.db import get_db_connection
@@ -224,3 +224,49 @@ def get_all_executions():
         )
     finally:
         conn.close()
+
+@router.get(
+    "/portfolio/{portfolio_id}/holdings",
+    response_model=schemas.HoldingsResponse,
+    summary="Get current net holdings for a portfolio"
+)
+def get_portfolio_holdings(portfolio_id: str):
+    """
+    Computes current net holdings for a portfolio by aggregating
+    all successfully executed orders in the database.
+    """
+    try:
+        # Validate that portfolio_id is a valid UUID
+        uuid.UUID(portfolio_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid portfolio ID format. Must be a valid UUID."
+        )
+
+    # Check if portfolio exists
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM portfolios WHERE id = %s;", (portfolio_id,))
+            portfolio = cursor.fetchone()
+            # If portfolio doesn't exist, it means there are no executions, so holdings are empty.
+            if not portfolio:
+                return {
+                    "portfolio_id": portfolio_id,
+                    "holdings": {}
+                }
+    except Exception as e:
+        logger.error(f"API: Error checking portfolio {portfolio_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database query failure."
+        )
+    finally:
+        conn.close()
+
+    holdings = get_current_holdings(portfolio_id)
+    return {
+        "portfolio_id": portfolio_id,
+        "holdings": holdings
+    }

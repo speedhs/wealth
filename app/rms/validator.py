@@ -74,11 +74,16 @@ def validate_portfolio_execution(
     FIRST_TIME mode:
         Treats each trade as a desired end-state (ticker + target qty).
         Computes delta against current holdings. Only the difference is traded.
+        Stocks held but not in target are fully exited.
         If holdings already match, returns already_matched=True.
 
     REBALANCE mode:
-        Treats each trade quantity as a signed adjustment.
-        Positive qty -> BUY, negative qty -> SELL, zero -> skip.
+        Each trade specifies its own action:
+          - BUY: direct purchase of specified quantity
+          - SELL: direct sale of specified quantity
+          - REBALANCE: quantity is the TARGET holding; system computes
+            the delta vs current holdings and generates BUY/SELL accordingly.
+            If already at target, the stock is skipped (HOLD).
 
     Returns dict with keys: valid, error_message, parsed_trades, already_matched.
     """
@@ -136,7 +141,7 @@ def validate_portfolio_execution(
     finally:
         conn.close()
 
-    # --- Field-level validation (common for both modes) ---
+    # --- Field-level validation ---
     validated = []
     for idx, trade in enumerate(trades):
         ticker = trade.get("ticker", "").strip().upper()
@@ -152,51 +157,87 @@ def validate_portfolio_execution(
         except (ValueError, TypeError):
             return _err(f"Quantity for '{ticker}' must be an integer.")
 
-        validated.append({"ticker": ticker, "quantity": qty})
+        action = trade.get("action")
+        if action:
+            action = action.strip().upper()
+
+        validated.append({"ticker": ticker, "quantity": qty, "action": action})
+
+    # --- Fetch current holdings (needed by both modes) ---
+    current_holdings = get_current_holdings(portfolio_id)
+    logger.info(f"RMS: Current holdings for {portfolio_id}: {current_holdings}")
 
     # --- Mode-specific resolution ---
     parsed_trades = []
     mode = action_type.strip().upper()
 
     if mode == "FIRST_TIME":
-        # Build desired target state
+        # Build desired target state from all trades
         target_state = {}
         for t in validated:
             if t["quantity"] < 0:
                 return _err(f"Target quantity for '{t['ticker']}' cannot be negative in FIRST_TIME mode.")
             target_state[t["ticker"]] = t["quantity"]
 
-        # Compare with current holdings
-        current_holdings = get_current_holdings(portfolio_id)
-        logger.info(f"RMS: Current holdings: {current_holdings}")
-        logger.info(f"RMS: Target state:     {target_state}")
+        logger.info(f"RMS: Target state: {target_state}")
 
-        # Stocks in target: buy/sell the difference
+        # Stocks in target: compute delta
         for ticker, target_qty in target_state.items():
             current_qty = current_holdings.get(ticker, 0)
-            diff = target_qty - current_qty
-            if diff > 0:
-                parsed_trades.append({"ticker": ticker, "action": "BUY", "quantity": diff})
-            elif diff < 0:
-                parsed_trades.append({"ticker": ticker, "action": "SELL", "quantity": abs(diff)})
-            # diff == 0 → already at target, skip
+            delta = target_qty - current_qty
+            if delta > 0:
+                parsed_trades.append({"ticker": ticker, "action": "BUY", "quantity": delta})
+            elif delta < 0:
+                parsed_trades.append({"ticker": ticker, "action": "SELL", "quantity": abs(delta)})
+            # delta == 0 → HOLD, skip
 
-        # Stocks held but not in target: exit fully
+        # Stocks held but NOT in target: exit fully
         for ticker, current_qty in current_holdings.items():
             if ticker not in target_state:
                 parsed_trades.append({"ticker": ticker, "action": "SELL", "quantity": current_qty})
 
     elif mode == "REBALANCE":
-        # Treat quantity as signed adjustment: +N → BUY N, −N → SELL N
+        # Per-trade action handling
         for t in validated:
+            ticker = t["ticker"]
             qty = t["quantity"]
-            if qty == 0:
-                logger.info(f"RMS: Skipping zero-adjustment for '{t['ticker']}'.")
-                continue
-            elif qty > 0:
-                parsed_trades.append({"ticker": t["ticker"], "action": "BUY", "quantity": qty})
+            action = t.get("action") or "REBALANCE"
+
+            if action == "BUY":
+                # Direct buy: quantity = shares to purchase
+                if qty <= 0:
+                    return _err(f"BUY quantity for '{ticker}' must be positive.")
+                parsed_trades.append({"ticker": ticker, "action": "BUY", "quantity": qty})
+
+            elif action == "SELL":
+                # Direct sell: quantity = shares to exit
+                if qty <= 0:
+                    return _err(f"SELL quantity for '{ticker}' must be positive.")
+                current = current_holdings.get(ticker, 0)
+                if current < qty:
+                    return _err(
+                        f"Cannot sell {qty} shares of '{ticker}'. "
+                        f"Current holding is only {current}."
+                    )
+                parsed_trades.append({"ticker": ticker, "action": "SELL", "quantity": qty})
+
+            elif action == "REBALANCE":
+                # Target-based: quantity = desired total holding
+                if qty < 0:
+                    return _err(f"REBALANCE target for '{ticker}' cannot be negative.")
+                current = current_holdings.get(ticker, 0)
+                delta = qty - current
+                if delta > 0:
+                    parsed_trades.append({"ticker": ticker, "action": "BUY", "quantity": delta})
+                elif delta < 0:
+                    parsed_trades.append({"ticker": ticker, "action": "SELL", "quantity": abs(delta)})
+                else:
+                    logger.info(f"RMS: '{ticker}' already at target ({qty}). HOLD — no action needed.")
             else:
-                parsed_trades.append({"ticker": t["ticker"], "action": "SELL", "quantity": abs(qty)})
+                return _err(
+                    f"Invalid action '{action}' for '{ticker}'. "
+                    f"Must be BUY, SELL, or REBALANCE."
+                )
     else:
         return _err(f"Invalid action_type '{action_type}'. Must be 'FIRST_TIME' or 'REBALANCE'.")
 
@@ -210,7 +251,7 @@ def validate_portfolio_execution(
 
     # --- Portfolio already at target ---
     if not parsed_trades:
-        logger.info(f"RMS: Portfolio '{portfolio_id}' already matches desired state.")
+        logger.info(f"RMS: Portfolio '{portfolio_id}' already matches desired state. No trades needed.")
         return {
             "valid": True,
             "error_message": None,
@@ -218,4 +259,5 @@ def validate_portfolio_execution(
             "already_matched": True,
         }
 
+    logger.info(f"RMS: Resolved {len(parsed_trades)} trades: {parsed_trades}")
     return {"valid": True, "error_message": None, "parsed_trades": parsed_trades, "already_matched": False}
