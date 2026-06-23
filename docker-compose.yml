@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: kalpi_postgres
+    environment:
+      POSTGRES_USER: kalpi_user
+      POSTGRES_PASSWORD: kalpi_password
+      POSTGRES_DB: kalpi_wealth
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kalpi_user -d kalpi_wealth"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: kalpi_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672" # RabbitMQ Management dashboard
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  api-service:
+    build: .
+    container_name: kalpi_api_service
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=kalpi_user
+      - DB_PASSWORD=kalpi_password
+      - DB_NAME=kalpi_wealth
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  order-manager:
+    build: .
+    container_name: kalpi_order_manager
+    command: python -m app.workers.order_manager
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=kalpi_user
+      - DB_PASSWORD=kalpi_password
+      - DB_NAME=kalpi_wealth
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  pgdata:
