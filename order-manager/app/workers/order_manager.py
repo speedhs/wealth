@@ -6,9 +6,9 @@ import signal
 import logging
 import multiprocessing
 from datetime import datetime
-from app.core.config import settings
-from app.core.db import get_db_connection, wait_for_db
-from app.core.queue import get_rabbitmq_connection, publish_message
+from commons.config import settings
+from commons.db import get_db_connection, wait_for_db
+from commons.queue import get_rabbitmq_connection, publish_message
 from app.brokers.factory import get_broker_adapter
 from app.notifications.notifier import trigger_execution_notification
 

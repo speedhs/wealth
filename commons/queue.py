@@ -1,7 +1,7 @@
 import json
 import logging
 import pika
-from app.core.config import settings
+from commons.config import settings
 
 logger = logging.getLogger(__name__)
 

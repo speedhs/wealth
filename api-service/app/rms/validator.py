@@ -1,7 +1,7 @@
 import logging
 import re
 from datetime import datetime
-from app.core.db import get_db_connection
+from commons.db import get_db_connection
 
 logger = logging.getLogger(__name__)
 

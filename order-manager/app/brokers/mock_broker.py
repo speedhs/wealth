@@ -3,7 +3,7 @@ import random
 import uuid
 import logging
 from app.brokers.base import BrokerAdapter
-from app.core.config import settings
+from commons.config import settings
 
 logger = logging.getLogger(__name__)
 

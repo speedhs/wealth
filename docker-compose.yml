@@ -34,7 +34,9 @@ services:
       retries: 5
 
   api-service:
-    build: .
+    build:
+      context: .
+      dockerfile: api-service/Dockerfile
     container_name: kalpi_api_service
     ports:
       - "8000:8000"
@@ -55,9 +57,10 @@ services:
         condition: service_healthy
 
   order-manager:
-    build: .
+    build:
+      context: .
+      dockerfile: order-manager/Dockerfile
     container_name: kalpi_order_manager
-    command: python -m app.workers.order_manager
     environment:
       - DB_HOST=db
       - DB_PORT=5432

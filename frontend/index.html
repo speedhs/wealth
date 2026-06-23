@@ -98,75 +98,62 @@
           <div class="mode-hint" id="mode-hint">
             Specify your desired end-state. The engine auto-computes what to buy, sell, or hold.
           </div>
-          <div class="trade-actions">
-            <button type="button" class="btn btn-ghost btn-sm" id="btn-add-stock">Add Stock</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="btn-load-sample">Load Sample</button>
-          </div>
         </div>
       </div>
-
-      <!-- Execute Button -->
-      <button type="button" class="btn btn-primary btn-execute" id="btn-execute">
-        Execute Trades
-      </button>
-
     </aside>
 
     <!-- ===== Right Panel ===== -->
-    <section class="panel-right">
-
+    <aside class="panel-right">
       <!-- Tabs -->
-      <div class="tabs" role="tablist">
-        <button type="button" class="tab-btn active" data-tab="tracker" role="tab" id="tab-tracker">Live Tracker</button>
-        <button type="button" class="tab-btn" data-tab="holdings" role="tab" id="tab-holdings">Current Holdings</button>
-        <button type="button" class="tab-btn" data-tab="history" role="tab" id="tab-history">History</button>
+      <div class="tabs">
+        <button class="tab-btn active" id="tab-tracker" data-tab="tracker">Tracker</button>
+        <button class="tab-btn" id="tab-history" data-tab="history">History</button>
+        <button class="tab-btn" id="tab-holdings" data-tab="holdings">Holdings</button>
       </div>
 
-      <!-- Tab: Live Tracker -->
-      <div class="tab-panel active" id="panel-tracker" role="tabpanel">
-
-        <!-- Empty State -->
+      <!-- Tab: Tracker -->
+      <div class="tab-panel active" id="panel-tracker">
         <div class="tracker-empty" id="tracker-empty">
-          <p class="tracker-empty-title">No active execution</p>
-          <p class="tracker-empty-desc">Configure your portfolio and trades on the left, then hit Execute to start monitoring.</p>
+          <div class="empty-state">
+            <div class="empty-icon">⌛</div>
+            <p class="empty-text">No execution in progress</p>
+            <p class="empty-subtext">Launch a trade to monitor live updates</p>
+          </div>
         </div>
-
-        <!-- Active Tracker (hidden by default) -->
-        <div id="tracker-active" style="display:none;">
-
-          <!-- Metadata -->
-          <div class="tracker-meta" id="tracker-meta">
-            <div class="meta-item">
-              <div class="meta-label">Status</div>
-              <div class="meta-value" id="meta-status">—</div>
+        <div class="tracker-active" id="tracker-active" style="display: none;">
+          <div class="meta-card">
+            <div class="meta-row">
+              <span class="meta-label">Status</span>
+              <span class="meta-value" id="meta-status">—</span>
             </div>
-            <div class="meta-item">
-              <div class="meta-label">Execution ID</div>
-              <div class="meta-value" id="meta-exec-id">—</div>
+            <div class="meta-row">
+              <span class="meta-label">Execution ID</span>
+              <span class="meta-value mono" id="meta-exec-id">—</span>
             </div>
-            <div class="meta-item">
-              <div class="meta-label">Portfolio</div>
-              <div class="meta-value" id="meta-portfolio-id">—</div>
+            <div class="meta-row">
+              <span class="meta-label">Portfolio ID</span>
+              <span class="meta-value mono" id="meta-portfolio-id">—</span>
             </div>
-            <div class="meta-item">
-              <div class="meta-label">Started</div>
-              <div class="meta-value" id="meta-created-at">—</div>
+            <div class="meta-row">
+              <span class="meta-label">Started At</span>
+              <span class="meta-value" id="meta-created-at">—</span>
             </div>
           </div>
 
-          <!-- Progress -->
-          <div class="progress-section">
+          <div class="progress-card">
             <div class="progress-header">
-              <span class="progress-label">Order Progress</span>
+              <span class="progress-label">Orders Progress</span>
               <span class="progress-count" id="progress-count">0 / 0</span>
             </div>
-            <div class="progress-bar-track">
-              <div class="progress-bar-fill" id="progress-bar"></div>
+            <div class="progress-bar-container">
+              <div class="progress-bar" id="progress-bar"></div>
             </div>
           </div>
 
-          <!-- Orders Table -->
-          <div class="orders-table-wrap">
+          <div class="orders-card">
+            <div class="card-header">
+              <span class="card-title">Order Details</span>
+            </div>
             <table class="orders-table">
               <thead>
                 <tr>
@@ -175,89 +162,94 @@
                   <th>Qty</th>
                   <th>Status</th>
                   <th>Broker ID</th>
-                  <th>Details</th>
                 </tr>
               </thead>
               <tbody id="orders-table-body">
-                <!-- Filled by JS -->
+                <!-- Rows inserted by JS -->
               </tbody>
             </table>
           </div>
 
-          <!-- Terminal Log -->
-          <div class="terminal">
-            <div class="terminal-header">
-              <span class="terminal-title">Execution Log</span>
+          <div class="terminal-card">
+            <div class="card-header">
+              <span class="card-title">Execution Log</span>
             </div>
-            <div class="terminal-body" id="terminal-body">
-              <!-- Log lines inserted by JS -->
+            <div class="terminal" id="terminal-body">
+              <!-- Logs inserted by JS -->
             </div>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- Tab: Current Holdings -->
-      <div class="tab-panel" id="panel-holdings" role="tabpanel">
-
-        <!-- Portfolio Selection State -->
-        <div class="tracker-meta mb-4" id="holdings-meta" style="display:none;">
-          <div class="meta-item">
-            <div class="meta-label">Viewing Portfolio</div>
-            <div class="meta-value" id="holdings-portfolio-id">—</div>
-          </div>
-          <div class="meta-item">
-            <div class="meta-label">Total Unique Holdings</div>
-            <div class="meta-value" id="holdings-count">0</div>
-          </div>
-        </div>
-
-        <!-- Empty State -->
-        <div class="tracker-empty" id="holdings-empty">
-          <p class="tracker-empty-title">No holdings to display</p>
-          <p class="tracker-empty-desc">Enter a valid Portfolio ID on the left, then click 'Refresh' or load the holdings tab.</p>
-          <button type="button" class="btn btn-ghost btn-sm mt-4" id="btn-refresh-holdings">Refresh Holdings</button>
-        </div>
-
-        <!-- Holdings Content (hidden by default) -->
-        <div id="holdings-active" style="display:none;">
-          <!-- Action buttons -->
-          <div class="mb-4" style="display: flex; gap: 8px; justify-content: flex-end;">
-            <button type="button" class="btn btn-ghost btn-sm" id="btn-refresh-holdings-active">Refresh</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="btn-copy-holdings-to-basket">Load into Trade Basket</button>
-          </div>
-
-          <!-- Holdings Table -->
-          <div class="orders-table-wrap">
-            <table class="orders-table">
-              <thead>
-                <tr>
-                  <th>Ticker</th>
-                  <th>Quantity</th>
-                </tr>
-              </thead>
-              <tbody id="holdings-table-body">
-                <!-- Filled by JS -->
-              </tbody>
-            </table>
           </div>
         </div>
       </div>
 
       <!-- Tab: History -->
-      <div class="tab-panel" id="panel-history" role="tabpanel">
-        <div id="history-container">
-          <div class="history-empty" id="history-empty">No execution history yet</div>
-          <div class="history-list" id="history-list" style="display:none;"></div>
+      <div class="tab-panel" id="panel-history">
+        <div class="history-empty" id="history-empty">
+          <div class="empty-state">
+            <div class="empty-icon">📜</div>
+            <p class="empty-text">No execution history</p>
+          </div>
+        </div>
+        <div class="history-active" id="history-active" style="display: none;">
+          <div class="history-list" id="history-list">
+            <!-- Items inserted by JS -->
+          </div>
         </div>
       </div>
 
-    </section>
-
+      <!-- Tab: Holdings -->
+      <div class="tab-panel" id="panel-holdings">
+        <div class="holdings-empty" id="holdings-empty">
+          <div class="empty-state">
+            <div class="empty-icon">💼</div>
+            <p class="empty-text">No portfolio loaded</p>
+            <p class="empty-subtext">Enter a portfolio ID and refresh to view holdings</p>
+          </div>
+        </div>
+        <div class="holdings-active" id="holdings-active" style="display: none;">
+          <div class="holdings-meta" id="holdings-meta">
+            <div class="meta-row">
+              <span class="meta-label">Portfolio ID</span>
+              <span class="meta-value mono" id="holdings-portfolio-id">—</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">Total Holdings</span>
+              <span class="meta-value" id="holdings-count">—</span>
+            </div>
+          </div>
+          <div class="holdings-controls">
+            <button class="btn btn-primary" id="btn-refresh-holdings-active">Refresh Holdings</button>
+            <button class="btn btn-secondary" id="btn-copy-holdings-to-basket">Copy to Basket</button>
+          </div>
+          <table class="holdings-table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Quantity</th>
+                <th>Price</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody id="holdings-table-body">
+              <!-- Rows inserted by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </aside>
   </main>
 
-  <!-- Toast Container -->
-  <div class="toast-container" id="toast-container"></div>
+  <!-- ===== Toast Container ===== -->
+  <div id="toast-container"></div>
+
+  <!-- ===== Action Bar ===== -->
+  <div class="action-bar">
+    <div class="action-group">
+      <button class="btn btn-ghost" id="btn-add-stock">+ Add Stock</button>
+      <button class="btn btn-ghost" id="btn-load-sample">Load Sample Portfolio</button>
+      <button class="btn btn-ghost" id="btn-refresh-holdings">View Holdings</button>
+    </div>
+    <button class="btn btn-primary" id="btn-execute">Execute Portfolio</button>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

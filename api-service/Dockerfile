@@ -11,16 +11,19 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
-COPY requirements.txt .
+COPY api-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy common shared files
+COPY commons /app/commons
+
 # Copy application files and frontend static files
-COPY app /app/app
+COPY api-service/app /app/app
 COPY frontend /app/frontend
-COPY .env /app/.env
+COPY api-service/.env /app/.env
 
 # Expose API port
 EXPOSE 8000
 
-# Default command (overridden in docker-compose for workers)
+# Default command
 CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

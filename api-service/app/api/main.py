@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from app.api.routes import router as api_router
-from app.core.db import init_db
+from commons.db import init_db
 
 # Configure logging
 logging.basicConfig(
